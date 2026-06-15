@@ -259,19 +259,104 @@ function MetadataEditor() {
 
 function BackgroundRemover() {
   const [file, setFile] = useState(null);
-  const [threshold, setThreshold] = useState(235);
   const [result, setResult] = useState(null);
-  const remove = () => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas"); canvas.width = img.width; canvas.height = img.height;
-      const ctx = canvas.getContext("2d"); ctx.drawImage(img, 0, 0);
-      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      for (let i = 0; i < data.data.length; i += 4) if (data.data[i] > threshold && data.data[i+1] > threshold && data.data[i+2] > threshold) data.data[i+3] = 0;
-      ctx.putImageData(data, 0, 0); setResult(canvas.toDataURL("image/png"));
-    }; img.src = URL.createObjectURL(file);
+  const [model, setModel] = useState("isnet_fp16");
+  const [preview, setPreview] = useState("checker");
+  const [status, setStatus] = useState("idle");
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState("");
+
+  useEffect(() => () => {
+    if (result?.url) URL.revokeObjectURL(result.url);
+  }, [result]);
+
+  const clear = () => {
+    setResult(null);
+    setError("");
+    setProgress(0);
+    setStatus("idle");
   };
-  return <div className="split-workspace"><div>{result ? <div className="image-preview checker"><img src={result} alt="Background removed"/></div> : file ? <ImagePreview file={file} onRemove={() => setFile(null)}/> : <Dropzone onFile={setFile}/>}</div><div className="control-panel"><h3>Background settings</h3><p className="muted">Best for product images with a plain white or light background.</p><label><span className="label-row">Light color sensitivity <strong>{threshold}</strong></span><input type="range" min="150" max="254" value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}/></label><button className="primary-button" disabled={!file} onClick={remove}>Remove background</button>{result && <a className="secondary-button" href={result} download="transparent-image.png"><Icon name="download"/> Download PNG</a>}</div></div>;
+
+  const remove = async () => {
+    if (!file) return;
+    clear();
+    setStatus("loading");
+    try {
+      const { default: removeBackground } = await import("@imgly/background-removal");
+      const blob = await removeBackground(file, {
+        model,
+        output: { format: "image/png", quality: 1, type: "foreground" },
+        progress: (_key, current, total) => {
+          if (total > 0) setProgress(Math.min(100, Math.round(current / total * 100)));
+        },
+      });
+      setResult({ blob, url: URL.createObjectURL(blob) });
+      setStatus("done");
+      setProgress(100);
+    } catch (reason) {
+      console.error("Background removal failed", reason);
+      setError("Background removal could not finish. Check your connection, try a smaller image, or use Fast mode.");
+      setStatus("error");
+    }
+  };
+
+  const removeFile = () => {
+    clear();
+    setFile(null);
+  };
+
+  return <div className="split-workspace background-workspace">
+    <div>
+      {!file && <Dropzone onFile={(nextFile) => { setFile(nextFile); clear(); }} title="Drop a photo here" hint="People, products, pets, and complex backgrounds supported"/>}
+      {file && !result && <ImagePreview file={file} onRemove={removeFile}/>}
+      {file && result && <BackgroundResult file={file} resultUrl={result.url} preview={preview} onRemove={removeFile}/>}
+    </div>
+    <div className="control-panel">
+      <h3>AI background removal</h3>
+      <p className="muted">The image is processed privately on your device. The AI model downloads once and is cached by your browser.</p>
+      <label>Processing mode
+        <select value={model} disabled={status === "loading"} onChange={(e) => { setModel(e.target.value); clear(); }}>
+          <option value="isnet_fp16">High quality</option>
+          <option value="isnet_quint8">Fast, smaller download</option>
+        </select>
+      </label>
+      {result && <label>Preview background
+        <div className="preview-options">
+          {["checker", "white", "dark"].map((option) => <button key={option} className={preview === option ? "active" : ""} onClick={() => setPreview(option)}><i className={`preview-swatch ${option}`}></i>{option === "checker" ? "Transparent" : option}</button>)}
+        </div>
+      </label>}
+      {status === "loading" && <div className="ai-progress">
+        <div><span>{progress < 100 ? "Loading AI and processing image" : "Finishing edges"}</span><strong>{progress}%</strong></div>
+        <div className="progress-track"><i style={{ width: `${Math.max(progress, 4)}%` }}></i></div>
+        <small>First use can take a minute. Keep this tab open.</small>
+      </div>}
+      {error && <p className="error-note">{error}</p>}
+      <button className="primary-button" disabled={!file || status === "loading"} onClick={remove}>
+        {status === "loading" ? "Removing background..." : result ? "Process again" : "Remove background"}
+      </button>
+      {result && <a className="secondary-button" href={result.url} download={`${file.name.replace(/\.[^.]+$/, "")}-no-background.png`}><Icon name="download"/> Download transparent PNG</a>}
+      <div className="privacy-note"><span>✓</span><p><strong>Private by design</strong>Your image never leaves this browser.</p></div>
+    </div>
+  </div>;
+}
+
+function BackgroundResult({ file, resultUrl, preview, onRemove }) {
+  const [position, setPosition] = useState(50);
+  const originalUrl = useMemo(() => URL.createObjectURL(file), [file]);
+  useEffect(() => () => URL.revokeObjectURL(originalUrl), [originalUrl]);
+  return <div className="comparison-card">
+    <div className={`comparison-stage background-result ${preview}`}>
+      <img src={originalUrl} alt="Original image with background"/>
+      <div className="comparison-after transparent-result" style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}>
+        <img src={resultUrl} alt="Image with its background removed"/>
+      </div>
+      <span className="comparison-label before-label">Original</span>
+      <span className="comparison-label after-label">Removed</span>
+      <div className="comparison-divider" style={{ left: `${position}%` }}><span className="comparison-handle">↔</span></div>
+      <input className="comparison-range" type="range" min="0" max="100" value={position} onChange={(e) => setPosition(Number(e.target.value))} aria-label="Compare original and background-removed image"/>
+    </div>
+    <div className="file-row"><div><strong>{file.name}</strong><small>Drag the slider to inspect the result</small></div><button onClick={onRemove} aria-label="Remove image"><Icon name="trash"/></button></div>
+  </div>;
 }
 
 const auditItems = [
