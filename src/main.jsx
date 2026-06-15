@@ -42,19 +42,19 @@ function Icon({ name, size = 20 }) {
 }
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-function appPath(pathname) {
-  return `${basePath}${pathname}`;
-}
+const useHashRouting = basePath.length > 0;
 
 function currentRoute() {
+  if (useHashRouting) return window.location.hash.slice(1) || "/";
+
   const pathname = window.location.pathname;
   const route = basePath && pathname.startsWith(basePath) ? pathname.slice(basePath.length) : pathname;
   return route || "/";
 }
 
 function navigate(path) {
-  window.history.pushState({}, "", appPath(path));
+  const url = useHashRouting ? `${basePath}/#${path}` : path;
+  window.history.pushState({}, "", url);
   window.dispatchEvent(new PopStateEvent("popstate"));
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
