@@ -6,7 +6,7 @@ const tools = [
   { id: "image-compressor", icon: "image", color: "blue", title: "Image Compressor", short: "Reduce size & convert format", category: "Images", description: "Compress images and convert them to JPG, PNG or WebP." },
   { id: "image-geotagger", icon: "pin", color: "orange", title: "Image Geotagger", short: "Add GPS data with a map", category: "Images", description: "Choose a location and prepare GPS metadata for your photos." },
   { id: "metadata-editor", icon: "sliders", color: "violet", title: "Metadata Editor", short: "View & change image data", category: "Images", description: "Review and update common image metadata in a clean form." },
-  { id: "background-remover", icon: "cut", color: "green", title: "Background Remover", short: "Remove image backgrounds", category: "Images", description: "Make simple light image backgrounds transparent in your browser." },
+  { id: "background-remover", icon: "cut", color: "green", title: "Background Remover", short: "Remove image backgrounds", category: "Images", description: "Use browser-based AI to create a clean, transparent image." },
   { id: "gmb-auditor", icon: "store", color: "rose", title: "GMB Auditor", short: "Find local profile weak spots", category: "Business", description: "Score your Google Business Profile and get prioritized improvements." },
   { id: "word-counter", icon: "text", color: "cyan", title: "Word Counter", short: "Count words, chars & more", category: "Writing", description: "Analyze words, characters, sentences, paragraphs and reading time." },
   { id: "markdown-editor", icon: "edit", color: "indigo", title: "Markdown Editor", short: "Write with live preview", category: "Writing", description: "Draft Markdown with a distraction-free live preview." },
@@ -282,7 +282,7 @@ function BackgroundRemover() {
     clear();
     setStatus("loading");
     try {
-      const { default: removeBackground } = await import("@imgly/background-removal");
+      const { removeBackground } = await import("@imgly/background-removal");
       const blob = await removeBackground(file, {
         model,
         output: { format: "image/png", quality: 1, type: "foreground" },
@@ -295,7 +295,8 @@ function BackgroundRemover() {
       setProgress(100);
     } catch (reason) {
       console.error("Background removal failed", reason);
-      setError("Background removal could not finish. Check your connection, try a smaller image, or use Fast mode.");
+      const detail = reason instanceof Error ? reason.message : String(reason);
+      setError(`Background removal could not finish: ${detail}`);
       setStatus("error");
     }
   };
